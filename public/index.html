@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layer 7 Dstat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --term-bg: #0d1109;
+            --term-color: #33ff00;
+            /* Classic phosphor green */
+            --term-color-dim: #1a8000;
+            --term-glow: rgba(51, 255, 0, 0.4);
+            --crt-line: rgba(255, 255, 255, 0.03);
+            --border-style: 2px dashed var(--term-color-dim);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--term-bg);
+            color: var(--term-color);
+            font-family: 'VT323', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            position: relative;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        /* CRT Effects */
+        body::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(to bottom,
+                    rgba(18, 16, 16, 0) 50%,
+                    var(--crt-line) 50%);
+            background-size: 100% 4px;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        body::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: radial-gradient(circle, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.6) 100%);
+            z-index: 51;
+            pointer-events: none;
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 900px;
+            border: var(--border-style);
+            padding: 1.5rem 2rem;
+            position: relative;
+            z-index: 10;
+            text-shadow: 0 0 5px var(--term-glow);
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 1rem;
+            border-bottom: var(--border-style);
+            padding-bottom: 1rem;
+        }
+
+        h1 {
+            font-family: 'Special Elite', cursive;
+            font-size: 2.5rem;
+            font-weight: normal;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 0.2rem;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: var(--term-color-dim);
+            text-transform: uppercase;
+        }
+
+        .metrics-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .main-metric {
+            text-align: center;
+            position: relative;
+        }
+
+        .rps-value {
+            font-size: 6.5rem;
+            font-weight: normal;
+            line-height: 1;
+            text-shadow: 0 0 20px var(--term-color);
+            transition: all 0.1s;
+        }
+
+        .rps-label {
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-top: 0.5rem;
+            color: var(--term-color-dim);
+        }
+
+        .chart-wrapper {
+            width: 100%;
+            height: 220px;
+            margin-top: 0.5rem;
+            position: relative;
+            border: 1px solid var(--term-color-dim);
+            padding: 1rem;
+            background: #000;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+            filter: drop-shadow(0 0 4px var(--term-color));
+        }
+
+        .info-panel {
+            margin-top: 2rem;
+            border-top: var(--border-style);
+            padding-top: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 48%;
+        }
+
+        .info-label {
+            font-size: 1.2rem;
+            text-decoration: underline;
+            color: var(--term-color-dim);
+        }
+
+        .info-code {
+            font-family: 'VT323', monospace;
+            font-size: 1.3rem;
+            background: #000;
+            padding: 0.5rem;
+            border: 1px solid var(--term-color-dim);
+            color: var(--term-color);
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        /* Blinking cursor */
+        .cursor::after {
+            content: "█";
+            animation: blink 1s step-end infinite;
+        }
+
+        .sys-info {
+            position: absolute;
+            top: -15px;
+            left: 20px;
+            background: var(--term-bg);
+            padding: 0 10px;
+            font-size: 1.2rem;
+            color: var(--term-color-dim);
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+        }
+
+        /* Subtle flicker effect on the whole page */
+        @keyframes flicker {
+            0% {
+                opacity: 0.95;
+            }
+
+            5% {
+                opacity: 0.85;
+            }
+
+            10% {
+                opacity: 0.95;
+            }
+
+            15% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        body {
+            animation: flicker 4s infinite;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.2rem;
+            }
+
+            .subtitle {
+                font-size: 1.2rem;
+            }
+
+            .rps-value {
+                font-size: 5rem;
+            }
+
+            .rps-label {
+                font-size: 1.2rem;
+            }
+
+            .chart-wrapper {
+                height: 250px;
+                padding: 0.5rem;
+            }
+
+            .info-panel {
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+
+            .info-item {
+                width: 100%;
+                align-items: flex-start;
+            }
+
+            .info-code {
+                font-size: 1.1rem;
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 1rem;
+            }
+
+            .dashboard {
+                padding: 1.5rem;
+            }
+
+            .sys-info {
+                left: 10px;
+                top: -10px;
+                font-size: 1rem;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+                letter-spacing: 1px;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .rps-value {
+                font-size: 4rem;
+            }
+
+            .rps-label {
+                font-size: 1rem;
+                letter-spacing: 2px;
+            }
+
+            .chart-wrapper {
+                height: 200px;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="dashboard">
+        <div class="sys-info">SYS.OP.MONITOR_V1.4</div>
+
+        <header>
+            <h1>LAYER 7 DSTAT</h1>
+            <div class="subtitle">NETWORK TRAFFIC ANALYZER <span class="cursor"></span></div>
+            <div class="target-host-top" onclick="copyTargetUrl()" title="Click to copy">
+                TARGET_HOST: <span id="targetUrlText">> http://localhost:8080/target</span>
+                <span class="copy-feedback" id="copyFeedback">COPIED!</span>
+            </div>
+        </header>
+
+        <style>
+            .target-host-top {
+                margin-top: 1rem;
+                font-family: 'VT323', monospace;
+                font-size: 1.5rem;
+                color: var(--term-color);
+                background: #000;
+                padding: 0.5rem 1rem;
+                border: 1px solid var(--term-color-dim);
+                display: inline-block;
+                cursor: pointer;
+                transition: background 0.2s;
+                position: relative;
+            }
+
+            .target-host-top:hover {
+                background: rgba(51, 255, 0, 0.2);
+            }
+
+            .target-host-top:active {
+                background: rgba(51, 255, 0, 0.4);
+            }
+
+            .copy-feedback {
+                position: absolute;
+                top: -30px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--term-color);
+                color: #000;
+                padding: 2px 8px;
+                font-size: 1.2rem;
+                opacity: 0;
+                transition: opacity 0.3s;
+                pointer-events: none;
+            }
+
+            .copy-feedback.show {
+                opacity: 1;
+            }
+        </style>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const currentTarget = window.location.origin + "/target";
+                document.getElementById("targetUrlText").innerText = "> " + currentTarget;
+            });
+
+            function copyTargetUrl() {
+                const urlToCopy = window.location.origin + "/target";
+
+                navigator.clipboard.writeText(urlToCopy).then(() => {
+                    const feedback = document.getElementById('copyFeedback');
+                    feedback.classList.add('show');
+                    setTimeout(() => {
+                        feedback.classList.remove('show');
+                    }, 1500);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            }
+        </script>
+        <div class="main-metric">
+            <div class="rps-value" id="rpsDisplay">0</div>
+            <div class="rps-label">REQ / SEC</div>
+        </div>
+
+        <div class="chart-wrapper">
+            <canvas id="rpsChart"></canvas>
+        </div>
+
+        <div style="text-align: center; margin-top: 1rem; font-size: 1rem; color: var(--term-color-dim);">
+            Developed by <a href="https://triotion.t.me" target="_blank"
+                style="color: var(--term-color); text-decoration: none;">@Triotion</a> <span class="cursor"></span>
+        </div>
+    </div>
+
+    <script>
+        // Chart Initialization
+        const ctx = document.getElementById('rpsChart').getContext('2d');
+        const maxDataPoints = 60; // Keep last 60 seconds
+
+        // Setting defaults to look like a retro terminal line
+        Chart.defaults.color = '#1a8000';
+        Chart.defaults.font.family = "'VT323', monospace";
+        Chart.defaults.font.size = 18;
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(maxDataPoints).fill(''),
+                datasets: [{
+                    label: 'RPS',
+                    data: Array(maxDataPoints).fill(0),
+                    borderColor: '#33ff00', // Bright phosphor green
+                    backgroundColor: 'rgba(51, 255, 0, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    stepped: true, // Makes it look jagged/digital instead of smooth
+                    pointRadius: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                },
+                scales: {
+                    x: {
+                        display: false,
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: '#1a8000',
+                            tickColor: '#1a8000',
+                            borderDash: [5, 5] // Dashed grid lines
+                        },
+                        ticks: {
+                            color: '#33ff00',
+                            callback: function (value) {
+                                if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+                                if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+                                return value;
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#0d1109',
+                        titleColor: '#33ff00',
+                        bodyColor: '#33ff00',
+                        borderColor: '#1a8000',
+                        borderWidth: 1,
+                        titleFont: { family: "'VT323'", size: 20 },
+                        bodyFont: { family: "'VT323'", size: 24 },
+                        cornerRadius: 0,
+                        displayColors: false,
+                        callbacks: {
+                            title: () => null,
+                            label: function (context) {
+                                return context.parsed.y.toLocaleString() + ' REQ/S';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Current count tweening logic
+        let displayValue = 0;
+        let targetValue = 0;
+        const rpsDisplayDom = document.getElementById('rpsDisplay');
+
+        // Instead of smooth interpolation, let's make it chaotic/glitchy while catching up
+        function updateDisplayNumber() {
+            if (displayValue !== targetValue) {
+                // Determine step size (faster if further away)
+                const diff = targetValue - displayValue;
+                const step = Math.ceil(Math.abs(diff) / 5) * Math.sign(diff);
+
+                displayValue += step;
+
+                // Overshoot / snap
+                if ((step > 0 && displayValue > targetValue) || (step < 0 && displayValue < targetValue)) {
+                    displayValue = targetValue;
+                }
+
+                // 10% chance to show a glitch number while animating
+                if (Math.abs(diff) > 10 && Math.random() > 0.9) {
+                    rpsDisplayDom.innerText = (displayValue + Math.floor(Math.random() * 1000)).toLocaleString();
+                } else {
+                    rpsDisplayDom.innerText = Math.round(displayValue).toLocaleString();
+                }
+            }
+
+            requestAnimationFrame(updateDisplayNumber);
+        }
+
+        requestAnimationFrame(updateDisplayNumber);
+
+        // Fetch Stats
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                const currentRPS = data.requests_per_second;
+
+                targetValue = currentRPS;
+
+                // Update chart
+                const dataset = chart.data.datasets[0].data;
+                dataset.push(currentRPS);
+                if (dataset.length > maxDataPoints) {
+                    dataset.shift();
+                }
+                chart.update();
+            } catch (error) {
+                console.error("SYS.ERR: FETCH FAILED", error);
+                targetValue = 0;
+                rpsDisplayDom.innerText = "ERR";
+            }
+        }
+
+        // Fetch stats every second
+        setInterval(fetchStats, 1000);
+        fetchStats();
+    </script>
+</body>
+
+</html>
